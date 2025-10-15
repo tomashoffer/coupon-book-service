@@ -76,7 +76,7 @@ Authorization: Bearer {accessToken}
 
 ### 5A. Create Coupon Book (Empty - Manual Codes Later)
 ```http
-POST http://localhost:3001/coupon-books
+POST http://localhost:4000/coupons
 Authorization: Bearer {businessToken}
 Content-Type: application/json
 ```
@@ -94,7 +94,7 @@ Content-Type: application/json
 
 ### 5B. Create Coupon Book (Auto-Generate Codes)
 ```http
-POST http://localhost:3001/coupon-books
+POST http://localhost:4000/coupons
 Authorization: Bearer {businessToken}
 Content-Type: application/json
 ```
@@ -124,13 +124,14 @@ Content-Type: application/json
 
 ### 6. Upload Codes
 ```http
-POST http://localhost:3001/coupon-books/{couponBookId}/codes/upload
+POST http://localhost:4000/coupons/codes
 Authorization: Bearer {businessToken}
 Content-Type: application/json
 ```
 **Body:**
 ```json
 {
+  "couponBookId": "uuid-of-coupon-book",
   "codes": [
     "SUMMER2025-001",
     "SUMMER2025-002",
@@ -143,16 +144,17 @@ Content-Type: application/json
 
 ### 7. Generate Codes with Pattern
 ```http
-POST http://localhost:3001/coupon-books/{couponBookId}/codes/generate
+POST http://localhost:4000/coupons/codes/generate
 Authorization: Bearer {businessToken}
 Content-Type: application/json
 ```
 **Body:**
 ```json
 {
+  "couponBookId": "uuid-of-coupon-book",
   "pattern": "PROMO-{RANDOM}-{NUM}",
-  "count": 10,
-  "length": 6
+  "totalCodes": 10,
+  "randomLength": 6
 }
 ```
 **Pattern Examples:**
@@ -178,20 +180,22 @@ Authorization: Bearer {businessToken}
 
 ### 10. Assign Random Coupon
 ```http
-POST http://localhost:3001/coupon-books/{couponBookId}/assign/random
+POST http://localhost:4000/coupons/assign
 Authorization: Bearer {businessToken}
 Content-Type: application/json
 ```
 **Body:**
 ```json
 {
+  "couponBookId": "uuid-of-coupon-book",
   "userId": "customer-user-id-here"
 }
 ```
+**Note:** `userId` is optional. If not provided, assigns to authenticated user.
 
 ### 11. Assign Specific Coupon
 ```http
-POST http://localhost:3001/coupon-books/assign/{couponCode}
+POST http://localhost:4000/coupons/assign/{couponCode}
 Authorization: Bearer {businessToken}
 Content-Type: application/json
 ```
@@ -208,7 +212,7 @@ Content-Type: application/json
 
 ### 12. Lock Coupon (Optional before redeeming)
 ```http
-POST http://localhost:3001/coupon-books/lock/{couponCode}
+POST http://localhost:4000/coupons/lock/{couponCode}
 Authorization: Bearer {customerToken}
 Content-Type: application/json
 ```
@@ -221,21 +225,24 @@ Content-Type: application/json
 
 ### 13. Redeem Coupon
 ```http
-POST http://localhost:3001/coupon-books/redeem/{couponCode}
-Authorization: Bearer {customerToken}
+POST http://localhost:4000/coupons/redeem/{couponCode}
+Authorization: Bearer {businessToken}
 Content-Type: application/json
 ```
 **Body:**
 ```json
 {
-  "businessLocation": "Store Downtown",
+  "userId": "customer-user-id-here",
   "metadata": {
+    "location": "Store Downtown",
+    "cashier": "John Doe",
+    "transactionId": "TXN-123456",
     "discount": "20%",
-    "productId": "prod-123",
     "orderId": "order-456"
   }
 }
 ```
+**Note:** `userId` is optional. If not provided, uses authenticated user. Only BUSINESS/ADMIN can redeem coupons.
 
 ### 14. Get My Coupons
 ```http

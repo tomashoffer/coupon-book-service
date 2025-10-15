@@ -35,6 +35,6 @@ const options = {
   logging: false,
 };
 
-// **Sólo un export default** de la instancia
+// **Only one default export** of the instance
 const AppDataSource = new DataSource(options as any);
 export default AppDataSource;

@@ -1,0 +1,97 @@
+{
+  "family": "coupon-book-service",
+  "networkMode": "bridge",
+  "requiresCompatibilities": ["EC2"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "coupon-book-api",
+      "image": "ACCOUNT.dkr.ecr.REGION.amazonaws.com/coupon-book-service:latest",
+      "portMappings": [
+        {
+          "hostPort": 4000,
+          "containerPort": 4000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "PORT",
+          "value": "4000"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "us-east-1"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT:secret:coupon-book/db-url"
+        },
+        {
+          "name": "JWT_PRIVATE_KEY_BASE64",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT:secret:coupon-book/jwt-private"
+        },
+        {
+          "name": "JWT_PUBLIC_KEY_BASE64",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT:secret:coupon-book/jwt-public"
+        },
+        {
+          "name": "GOOGLE_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT:secret:coupon-book/google-client-id"
+        },
+        {
+          "name": "GOOGLE_CLIENT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT:secret:coupon-book/google-client-secret"
+        },
+        {
+          "name": "S3_BUCKET_NAME",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT:secret:coupon-book/s3-bucket"
+        },
+        {
+          "name": "REDIS_URL",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT:secret:coupon-book/redis-url"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/coupon-book-service",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:4000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "mountPoints": [
+        {
+          "sourceVolume": "logs",
+          "containerPath": "/app/logs",
+          "readOnly": false
+        }
+      ]
+    }
+  ],
+  "volumes": [
+    {
+      "name": "logs",
+      "host": {
+        "sourcePath": "/var/log/coupon-book"
+      }
+    }
+  ]
+}

@@ -20,25 +20,31 @@ A comprehensive API service for managing coupon books, codes, assignments, and r
 
 ## 📋 API Endpoints
 
+### Authentication
+- `POST /auth/register` - Register new user (BUSINESS, CUSTOMER, ADMIN)
+- `POST /auth/login` - Login with email/password
+- `GET /auth/me` - Get current authenticated user
+- `GET /auth/google` - Login with Google OAuth
+
 ### Coupon Books
-- `POST /coupon-books` - Create a new coupon book
-- `GET /coupon-books/:id` - Get coupon book details
-- `GET /coupon-books/:id/stats` - Get coupon book statistics
+- `POST /coupons` - Create a new coupon book
+- `GET /coupons/:id` - Get coupon book details
 
 ### Code Management
-- `POST /coupon-books/:id/codes/upload` - Upload custom codes
-- `POST /coupon-books/:id/codes/generate` - Generate codes with patterns
+- `POST /coupons/codes` - Upload custom codes to existing book
+- `POST /coupons/codes/generate` - Generate codes automatically with patterns
 
 ### Assignment
-- `POST /coupon-books/:id/assign/random` - Assign random coupon to user
-- `POST /coupon-books/assign/:code` - Assign specific coupon to user
+- `POST /coupons/assign` - Assign random coupon to user
+- `POST /coupons/assign/:code` - Assign specific coupon to user
 
 ### Redemption
-- `POST /coupon-books/lock/:code` - Lock coupon temporarily
-- `POST /coupon-books/redeem/:code` - Redeem coupon permanently
+- `POST /coupons/lock/:code` - Lock coupon temporarily (24h)
+- `POST /coupons/unlock/:code` - Unlock a locked coupon
+- `POST /coupons/redeem/:code` - Redeem coupon permanently
 
 ### User Operations
-- `GET /coupon-books/my-coupons` - Get user's assigned coupons
+- `GET /coupons/my-assigned-coupons` - Get user's assigned coupons
 
 ## 🛠️ Installation
 
@@ -113,8 +119,16 @@ Use placeholders in your patterns:
 - `{RANDOM}` - Random alphanumeric string
 - `{NUM}` - Random numeric string
 - `{ALPHA}` - Random alphabetic string
+- `{UUID}` - Short UUID (very unique)
 
-Example: `SUMMER-{RANDOM}-{NUM}` → `SUMMER-Ab3K9m-123456`
+**Examples:**
+```
+SUMMER-{RANDOM}     → SUMMER-Ab3K9mXy
+DISCOUNT-{NUM}      → DISCOUNT-12345678
+VIP-{ALPHA}         → VIP-AbCdEfGh
+SPECIAL-{UUID}      → SPECIAL-a1b2c3d4
+SALE-{RANDOM}-{NUM} → SALE-Xy9K2m-456789
+```
 
 ## 📊 Database Schema
 
@@ -158,29 +172,116 @@ npm run test:cov
 
 ## 🚀 Deployment
 
-### Production Considerations
-- Use environment-specific configurations
-- Set up proper logging and monitoring
-- Configure SSL/TLS certificates
-- Set up database backups
-- Use process managers (PM2)
+### Docker Deployment
 
-### Cloud Deployment
-- **AWS**: ECS with RDS PostgreSQL
-- **GCP**: Cloud Run with Cloud SQL
-- **Azure**: Container Instances with Azure Database
+```bash
+# Build and run with Docker Compose
+docker-compose up -d
+
+# Run migrations
+docker-compose exec app npm run migration:run
+
+# View logs
+docker-compose logs -f app
+```
+
+### AWS Deployment (Production)
+
+This project includes complete AWS infrastructure as code:
+
+**Services Used:**
+- **ECS (EC2)** - Container orchestration
+- **RDS PostgreSQL** - Database with Multi-AZ
+- **ElastiCache Redis** - Caching layer
+- **ALB** - Load balancing
+- **Route 53** - DNS management
+- **CloudWatch** - Monitoring and logging
+- **S3** - File storage
+
+**Deploy Steps:**
+```bash
+# Configure AWS credentials
+aws configure
+
+# Initialize Terraform
+cd infrastructure
+terraform init
+
+# Deploy infrastructure
+terraform apply
+
+# Deploy application
+./scripts/deploy-ecs.sh
+```
+
+See `infrastructure/README.md` for detailed deployment instructions.
+
+## 🎯 Quick Start Example
+
+```bash
+# 1. Register a business user
+curl -X POST http://localhost:4000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"business@test.com","password":"Pass123!","role":"BUSINESS"}'
+
+# 2. Login
+curl -X POST http://localhost:4000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"business@test.com","password":"Pass123!"}'
+
+# 3. Create coupon book with auto-generated codes
+curl -X POST http://localhost:4000/coupons \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Summer Sale",
+    "maxCodesPerUser": 3,
+    "allowMultipleRedemptions": false,
+    "autoGenerateCodes": {
+      "pattern": "SUMMER-{RANDOM}",
+      "count": 100,
+      "length": 8
+    }
+  }'
+
+# 4. Assign random coupon
+curl -X POST http://localhost:4000/coupons/assign \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"couponBookId":"YOUR_BOOK_ID"}'
+```
+
+## 📖 Documentation
+
+- **Swagger UI**: http://localhost:4000/api
+- **Architecture**: See `infrastructure/README.md`
+- **Postman Collection**: Available in project root
+
+## 🔑 Key Features Explained
+
+### Lock Mechanism
+Coupons can be **temporarily locked** for 24 hours before redemption:
+```
+ASSIGNED → LOCKED (24h) → REDEEMED
+```
+
+Only the user who locked the coupon can redeem it. Locks expire automatically and are cleaned up every 5 minutes.
+
+### Multiple Redemptions
+Enable `allowMultipleRedemptions: true` to allow the same coupon to be redeemed multiple times:
+```
+LOCKED → REDEEMED → ASSIGNED (ready to use again)
+```
+
+### Concurrency Control
+All critical operations use:
+- **ACID Transactions** - All-or-nothing operations
+- **Pessimistic Locks** - Row-level locking with `FOR UPDATE`
+- **State Validation** - Only valid state transitions allowed
 
 ## 📝 License
 
 This project is licensed under the UNLICENSED License.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
 
 ## 📞 Support
 

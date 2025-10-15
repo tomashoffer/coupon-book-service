@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ApiConfigService } from './shared/services/api-config.service';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -34,6 +35,9 @@ import { CouponBooksModule } from './modules/coupon-books/coupon-books.module';
     // This second TypeORM configuration might be for a different purpose,
     // like running migrations with a static configuration.
     TypeOrmModule.forRoot(AppDataSource.options),
+    
+    // Schedule module for cron jobs
+    ScheduleModule.forRoot(),
     
     // Application feature modules.
     AuthModule,

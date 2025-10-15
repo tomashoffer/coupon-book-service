@@ -27,6 +27,7 @@ import {
     AssignRandomCouponDto,
     RedeemCouponDto,
     LockCouponDto,
+    UnlockCouponDto,
     CouponBookResponseDto,
     CouponCodeResponseDto,
     CouponAssignmentResponseDto,
@@ -36,7 +37,7 @@ import {
 @ApiTags('Coupon Books')
 @ApiBearerAuth()
 @UseGuards(AuthGuard(), RolesGuard)
-@Controller('coupon-books')
+@Controller('coupons')
 export class CouponBooksController {
     constructor(private readonly couponBooksService: CouponBooksService) {}
 
@@ -52,47 +53,41 @@ export class CouponBooksController {
         return await this.couponBooksService.createCouponBook(businessId, createDto);
     }
 
-    @Post(':id/codes/upload')
+    @Post('codes')
     @Roles(RoleType.BUSINESS, RoleType.ADMIN)
-    @ApiOperation({ summary: 'Upload coupon codes to an existing book' })
-    @ApiParam({ name: 'id', description: 'Coupon book ID' })
+    @ApiOperation({ summary: 'Upload a code list to an existing Coupon Book' })
     @ApiResponse({ status: 201, description: 'Codes uploaded successfully', type: [CouponCodeResponseDto] })
     async uploadCodes(
-        @Param('id', ParseUUIDPipe) couponBookId: string,
         @Body() uploadDto: UploadCodesDto
     ): Promise<CouponCodeResponseDto[]> {
-        return await this.couponBooksService.uploadCodes(couponBookId, uploadDto);
+        return await this.couponBooksService.uploadCodes(uploadDto.couponBookId, uploadDto);
     }
 
-    @Post(':id/codes/generate')
+    @Post('codes/generate')
     @Roles(RoleType.BUSINESS, RoleType.ADMIN)
     @ApiOperation({ summary: 'Generate coupon codes automatically' })
-    @ApiParam({ name: 'id', description: 'Coupon book ID' })
     @ApiResponse({ status: 201, description: 'Codes generated successfully', type: [CouponCodeResponseDto] })
     async generateCodes(
-        @Param('id', ParseUUIDPipe) couponBookId: string,
         @Body() generateDto: GenerateCodesDto
     ): Promise<CouponCodeResponseDto[]> {
-        return await this.couponBooksService.generateCodes(couponBookId, generateDto);
+        return await this.couponBooksService.generateCodes(generateDto.couponBookId, generateDto);
     }
 
-    @Post(':id/assign/random')
+    @Post('assign')
     @Roles(RoleType.CUSTOMER, RoleType.BUSINESS, RoleType.ADMIN)
-    @ApiOperation({ summary: 'Assign a random coupon to a user' })
-    @ApiParam({ name: 'id', description: 'Coupon book ID' })
+    @ApiOperation({ summary: 'Assign a new random coupon code to a user' })
     @ApiResponse({ status: 201, description: 'Coupon assigned successfully', type: CouponAssignmentResponseDto })
     async assignRandomCoupon(
         @AuthUser() user: UserDto,
-        @Param('id', ParseUUIDPipe) couponBookId: string,
         @Body() assignDto: AssignRandomCouponDto
     ): Promise<any> {
         const targetUserId = assignDto?.userId || user.id;
-        return await this.couponBooksService.assignRandomCoupon(couponBookId, targetUserId);
+        return await this.couponBooksService.assignRandomCoupon(assignDto.couponBookId, targetUserId);
     }
 
     @Post('assign/:code')
     @Roles(RoleType.BUSINESS, RoleType.ADMIN)
-    @ApiOperation({ summary: 'Assign a specific coupon to a user' })
+    @ApiOperation({ summary: 'Assign a given coupon code to a user' })
     @ApiParam({ name: 'code', description: 'Coupon code' })
     @ApiResponse({ status: 201, description: 'Coupon assigned successfully', type: CouponAssignmentResponseDto })
     async assignSpecificCoupon(
@@ -105,8 +100,8 @@ export class CouponBooksController {
     @Post('lock/:code')
     @Roles(RoleType.CUSTOMER, RoleType.BUSINESS, RoleType.ADMIN)
     @ApiOperation({ 
-        summary: 'Lock a coupon temporarily',
-        description: 'Locks a coupon. CUSTOMER locks their own coupon. BUSINESS/ADMIN can specify userId in body to lock for another user.'
+        summary: 'Lock a coupon for redemption',
+        description: 'Code should have been previously assigned to a user. This is a temporary lock operation, but not a definitive redeem.'
     })
     @ApiParam({ name: 'code', description: 'Coupon code' })
     @ApiResponse({ status: 200, description: 'Coupon locked successfully', type: CouponCodeResponseDto })
@@ -119,12 +114,29 @@ export class CouponBooksController {
         return await this.couponBooksService.lockCoupon(couponCode, targetUserId);
     }
 
+    @Post('unlock/:code')
+    @Roles(RoleType.CUSTOMER, RoleType.BUSINESS, RoleType.ADMIN)
+    @ApiOperation({ 
+        summary: 'Unlock a coupon',
+        description: 'Unlocks a previously locked coupon. Only the user who locked it can unlock it.'
+    })
+    @ApiParam({ name: 'code', description: 'Coupon code' })
+    @ApiResponse({ status: 200, description: 'Coupon unlocked successfully', type: CouponCodeResponseDto })
+    async unlockCoupon(
+        @AuthUser() user: UserDto,
+        @Param('code') couponCode: string,
+        @Body() unlockDto?: UnlockCouponDto
+    ): Promise<CouponCodeResponseDto> {
+        const targetUserId = unlockDto?.userId || user.id;
+        return await this.couponBooksService.unlockCoupon(couponCode, targetUserId);
+    }
+
     @Post('redeem/:code')
     @Roles(RoleType.BUSINESS, RoleType.ADMIN)
     @HttpCode(HttpStatus.OK)
     @ApiOperation({ 
         summary: 'Redeem a coupon',
-        description: 'Redeems a coupon permanently. BUSINESS/ADMIN can specify userId in body to redeem for another user.'
+        description: 'Code should have been previously assigned to a user. This is a permanent lock operation.'
     })
     @ApiParam({ name: 'code', description: 'Coupon code' })
     @ApiResponse({ status: 200, description: 'Coupon redeemed successfully', type: CouponRedemptionResponseDto })

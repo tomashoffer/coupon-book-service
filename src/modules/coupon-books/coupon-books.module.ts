@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CouponBooksController } from './coupon-books.controller';
 import { CouponBooksService } from './coupon-books.service';
+import { CouponLockCleanupService } from './coupon-lock-cleanup.service';
 import { CouponBookEntity } from './entities/coupon-book.entity';
 import { CouponCodeEntity } from './entities/coupon-code.entity';
 import { CouponAssignmentEntity } from './entities/coupon-assignment.entity';
@@ -19,7 +20,7 @@ import { UserEntity } from '../user/user.entity';
         ]),
     ],
     controllers: [CouponBooksController],
-    providers: [CouponBooksService],
+    providers: [CouponBooksService, CouponLockCleanupService],
     exports: [CouponBooksService],
 })
 export class CouponBooksModule {}

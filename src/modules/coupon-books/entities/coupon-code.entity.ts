@@ -15,10 +15,13 @@ export interface ICouponCodeEntity extends IAbstractEntity<any> {
   assignedToUserId?: string;
   assignedAt?: Date;
   lockedAt?: Date;
+  lockedByUserId?: string;
+  lockExpiresAt?: Date;
   redeemedAt?: Date;
   expiresAt?: Date;
   couponBook: CouponBookEntity;
   assignedToUser?: UserEntity;
+  lockedByUser?: UserEntity;
   assignments: CouponAssignmentEntity[];
   redemptions: CouponRedemptionEntity[];
 }
@@ -52,6 +55,12 @@ export class CouponCodeEntity
     @Column({ type: 'timestamp', nullable: true, name: 'locked_at' })
     lockedAt?: Date;
 
+    @Column({ type: 'uuid', nullable: true, name: 'locked_by_user_id' })
+    lockedByUserId?: string;
+
+    @Column({ type: 'timestamp', nullable: true, name: 'lock_expires_at' })
+    lockExpiresAt?: Date;
+
     @Column({ type: 'timestamp', nullable: true, name: 'redeemed_at' })
     redeemedAt?: Date;
 
@@ -68,6 +77,10 @@ export class CouponCodeEntity
     @ManyToOne(() => UserEntity, { nullable: true, onDelete: 'SET NULL' })
     @JoinColumn({ name: 'assigned_to_user_id' })
     assignedToUser?: UserEntity;
+
+    @ManyToOne(() => UserEntity, { nullable: true, onDelete: 'SET NULL' })
+    @JoinColumn({ name: 'locked_by_user_id' })
+    lockedByUser?: UserEntity;
 
     @OneToMany(() => CouponAssignmentEntity, assignment => assignment.couponCode, {
         cascade: true

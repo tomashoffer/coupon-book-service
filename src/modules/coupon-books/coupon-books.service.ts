@@ -7,9 +7,10 @@ import { CouponAssignmentEntity } from './entities/coupon-assignment.entity';
 import { CouponRedemptionEntity } from './entities/coupon-redemption.entity';
 import { UserEntity } from '../user/user.entity';
 import { CouponStatus, CouponBookStatus } from '../../constants/coupon-status';
+import { LOCK_CONFIG } from '../../constants/lock-config';
 import { COUPON_RESPONSES } from '../../constants/coupon-responses';
 import { GeneratorProvider } from '../../providers/generator.provider';
-import { CreateCouponBookDto, UploadCodesDto, GenerateCodesDto, AssignCouponDto } from './dto';
+import { CreateCouponBookDto, UploadCodesDto, GenerateCodesDto, AssignCouponDto, UnlockCouponDto } from './dto';
 import { CouponBookNotFoundException } from '../../exceptions/coupon-book-not-found.exception';
 import { CouponNotFoundException } from '../../exceptions/coupon-not-found.exception';
 import { CouponAlreadyRedeemedException } from '../../exceptions/coupon-already-redeemed.exception';
@@ -156,16 +157,27 @@ export class CouponBooksService {
             existingCodeStrings
         );
 
-        // Create code entities
-        const couponCodes = newCodes.map(code => 
-            this.couponCodeRepository.create({
-                code,
-                couponBookId,
-                status: CouponStatus.AVAILABLE,
-            })
-        );
-
-        const savedCodes = await this.couponCodeRepository.save(couponCodes);
+        // Create code entities with conflict handling
+        const savedCodes = [];
+        for (const code of newCodes) {
+            try {
+                const couponCode = this.couponCodeRepository.create({
+                    code,
+                    couponBookId,
+                    status: CouponStatus.AVAILABLE,
+                });
+                
+                const savedCode = await this.couponCodeRepository.save(couponCode);
+                savedCodes.push(savedCode);
+            } catch (error) {
+                // Ignore duplicate codes
+                if (error.code === '23505') { // PostgreSQL unique violation
+                    console.log(`Skipping duplicate code: ${code}`);
+                    continue;
+                }
+                throw error;
+            }
+        }
 
         // Update total codes in the book
         await this.couponBookRepository.update(couponBookId, {
@@ -176,7 +188,7 @@ export class CouponBooksService {
     }
 
     /**
-     * Asignar un cupón aleatorio a un usuario
+     * Assign a random coupon to a user
      */
     async assignRandomCoupon(couponBookId: string, userId: string): Promise<any> {
         return await this.dataSource.transaction(async manager => {
@@ -254,7 +266,7 @@ export class CouponBooksService {
     }
 
     /**
-     * Asignar un cupón específico a un usuario
+     * Assign a specific coupon to a user
      */
     async assignSpecificCoupon(couponCode: string, assignDto: AssignCouponDto): Promise<any> {
         return await this.dataSource.transaction(async manager => {
@@ -264,13 +276,12 @@ export class CouponBooksService {
             });
 
             if (!user) {
-                throw new NotFoundException('Usuario no encontrado');
+                throw new NotFoundException('User not found');
             }
 
-            // Buscar el cupón
+            // Find the coupon WITH LOCK (without relations)
             const coupon = await manager.findOne(CouponCodeEntity, {
                 where: { code: couponCode },
-                relations: ['couponBook'],
                 lock: { mode: 'pessimistic_write' }
             });
 
@@ -278,13 +289,22 @@ export class CouponBooksService {
                 throw new CouponNotFoundException(couponCode);
             }
 
-            // Verificar que el cupón está disponible
-            if (coupon.status !== CouponStatus.AVAILABLE) {
-                throw new ConflictException('Este cupón no está disponible para asignación');
+            // Buscar el coupon book por separado (sin lock)
+            const couponBook = await manager.findOne(CouponBookEntity, {
+                where: { id: coupon.couponBookId }
+            });
+
+            if (!couponBook) {
+                throw new CouponBookNotFoundException(coupon.couponBookId);
             }
 
-            // Verificar límite de cupones por usuario
-            if (coupon.couponBook.maxCodesPerUser) {
+            // Verify that the coupon is available
+            if (coupon.status !== CouponStatus.AVAILABLE) {
+                throw new ConflictException('This coupon is not available for assignment');
+            }
+
+            // Verify coupon limit per user
+            if (couponBook.maxCodesPerUser) {
                 const userAssignments = await manager.count(CouponAssignmentEntity, {
                     where: { 
                         userId: assignDto.userId,
@@ -292,19 +312,19 @@ export class CouponBooksService {
                     }
                 });
 
-                if (userAssignments >= coupon.couponBook.maxCodesPerUser) {
+                if (userAssignments >= couponBook.maxCodesPerUser) {
                     throw new BadRequestException(COUPON_RESPONSES.MAX_COUPONS_REACHED);
                 }
             }
 
-            // Actualizar estado del cupón
+            // Update coupon status
             await manager.update(CouponCodeEntity, coupon.id, {
                 status: CouponStatus.ASSIGNED,
                 assignedToUserId: assignDto.userId,
                 assignedAt: new Date()
             });
 
-            // Crear asignación
+            // Create assignment
             const assignment = manager.create(CouponAssignmentEntity, {
                 couponCodeId: coupon.id,
                 userId: assignDto.userId,
@@ -322,7 +342,7 @@ export class CouponBooksService {
     }
 
     /**
-     * Bloquear un cupón temporalmente
+     * Lock a coupon temporarily
      */
     async lockCoupon(couponCode: string, userId: string): Promise<any> {
         return await this.dataSource.transaction(async manager => {
@@ -344,17 +364,85 @@ export class CouponBooksService {
             }
 
             if (coupon.status === CouponStatus.LOCKED) {
-                throw new CouponLockedException(couponCode);
+                // Check if the lock is still valid and belongs to the user
+                if (coupon.lockedByUserId === userId && coupon.lockExpiresAt && coupon.lockExpiresAt > new Date()) {
+                    // User already has a valid lock, return the coupon
+                    return await manager.findOne(CouponCodeEntity, { where: { id: coupon.id } });
+                } else if (coupon.lockExpiresAt && coupon.lockExpiresAt <= new Date()) {
+                    // Lock expired, we can proceed to lock it again
+                } else {
+                    // Lock is valid and belongs to someone else
+                    throw new CouponLockedException(couponCode);
+                }
             }
 
-            // Bloquear temporalmente
+            // Lock temporarily with ownership and expiration (24 hours)
+            const lockExpiresAt = new Date(Date.now() + LOCK_CONFIG.DEFAULT_TTL_MS);
+            
             await manager.update(CouponCodeEntity, coupon.id, {
                 status: CouponStatus.LOCKED,
-                lockedAt: new Date()
+                lockedAt: new Date(),
+                lockedByUserId: userId,
+                lockExpiresAt: lockExpiresAt
             });
 
             return await manager.findOne(CouponCodeEntity, { where: { id: coupon.id } });
         });
+    }
+
+    /**
+     * Unlock a coupon (remove lock)
+     */
+    async unlockCoupon(couponCode: string, userId: string): Promise<any> {
+        return await this.dataSource.transaction(async manager => {
+            const coupon = await manager.findOne(CouponCodeEntity, {
+                where: { code: couponCode },
+                lock: { mode: 'pessimistic_write' }
+            });
+
+            if (!coupon) {
+                throw new CouponNotFoundException(couponCode);
+            }
+
+            if (coupon.status !== CouponStatus.LOCKED) {
+                throw new BadRequestException('This coupon is not locked');
+            }
+
+            // Check if the user owns the lock or is admin/business
+            if (coupon.lockedByUserId !== userId) {
+                throw new BadRequestException('You can only unlock coupons that you locked');
+            }
+
+            // Unlock the coupon
+            await manager.update(CouponCodeEntity, coupon.id, {
+                status: CouponStatus.ASSIGNED, // Return to assigned status
+                lockedAt: null,
+                lockedByUserId: null,
+                lockExpiresAt: null
+            });
+
+            return await manager.findOne(CouponCodeEntity, { where: { id: coupon.id } });
+        });
+    }
+
+    /**
+     * Clean up expired locks
+     */
+    async cleanupExpiredLocks(): Promise<number> {
+        const result = await this.couponCodeRepository
+            .createQueryBuilder()
+            .update(CouponCodeEntity)
+            .set({
+                status: CouponStatus.ASSIGNED,
+                lockedAt: null,
+                lockedByUserId: null,
+                lockExpiresAt: null
+            })
+            .where('status = :status', { status: CouponStatus.LOCKED })
+            .andWhere('lock_expires_at < :now', { now: new Date() })
+            .execute();
+
+        return result.affected || 0;
     }
 
     /**
@@ -385,7 +473,16 @@ export class CouponBooksService {
             }
 
             if (coupon.status === CouponStatus.LOCKED) {
-                throw new BadRequestException('This coupon is temporarily blocked');
+                // Check if the lock belongs to the user and is still valid
+                if (coupon.lockedByUserId !== userId) {
+                    throw new BadRequestException('This coupon is locked by another user');
+                }
+                
+                if (!coupon.lockExpiresAt || coupon.lockExpiresAt <= new Date()) {
+                    throw new BadRequestException('This coupon lock has expired');
+                }
+                
+                // User owns the lock and it's valid, allow redemption
             }
 
             // Now get the coupon book data separately
@@ -403,7 +500,7 @@ export class CouponBooksService {
 
             const savedRedemption = await manager.save(redemption);
 
-            // Actualizar estado del cupón
+            // Update coupon status
             const newStatus = couponBook.allowMultipleRedemptions 
                 ? CouponStatus.ASSIGNED 
                 : CouponStatus.REDEEMED;
@@ -411,7 +508,9 @@ export class CouponBooksService {
             await manager.update(CouponCodeEntity, coupon.id, {
                 status: newStatus,
                 redeemedAt: new Date(),
-                lockedAt: null // Desbloquear si estaba bloqueado 
+                lockedAt: null, // Unlock if it was locked
+                lockedByUserId: null, // Clear lock owner
+                lockExpiresAt: null // Clear lock expiration
             });
 
             // Return redemption with coupon code

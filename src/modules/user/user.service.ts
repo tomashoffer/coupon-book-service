@@ -17,7 +17,7 @@ export class UserService {
         public userRepository: UserRepository,
     ) {}
 
-    // Métodos de cars eliminados - proyecto anterior
+    // Car methods removed - previous project
 
     async findOne(findData: FindOptionsWhere<UserEntity>): Promise<UserEntity | null> {
         const user = await this.userRepository.findOne({
@@ -156,7 +156,7 @@ export class UserService {
     }
 
     async sendVerificationEmail(email: string): Promise<void> {
-        // Implementar envío de email de verificación
+        // Implement verification email sending
         console.log(`Sending verification email to: ${email}`);
     }
 
